@@ -1,11 +1,15 @@
-"""Command-line entry point for the typed-input agent prototype."""
+"""Voice-driven command-line entry point for the autonomous agent."""
 
 import argparse
+import logging
 
 from graph import agent_graph
-from safety.killswitch import reset_abort
-from voice.stt import listen
-from voice.tts import speak
+from safety.killswitch import reset_abort, start_killswitch, stop_killswitch
+from safety.log import summarize_for_speech
+from voice.stt import listen_push_to_talk
+from voice.tts import play_chime, speak
+
+logger = logging.getLogger("boot_to_browser")
 
 
 def run_task(goal: str) -> dict[str, object]:
@@ -29,32 +33,62 @@ def run_task(goal: str) -> dict[str, object]:
             latencies.setdefault(stage, 0)
             latencies[stage] += latency
 
-    result: dict[str, object] = {
+    return {
         "status": final_state.get("status", "failed"),
         "steps": final_state.get("step_count", 0),
         "latencies": latencies,
     }
-    speak(str(result["status"]))
-    return result
+
+
+def _status_message(status: object) -> str:
+    """Translate a graph status into a short spoken status."""
+    if status == "done":
+        return "Done"
+    if status == "aborted":
+        return "Stopped"
+    return "I'm stuck"
 
 
 def main() -> None:
-    """Run one text goal or start the typed-input command loop."""
+    """Run one text goal or start the voice command loop."""
     parser = argparse.ArgumentParser(description="Boot-to-Browser agent")
     parser.add_argument("--text", help="Run one typed goal and exit")
     args = parser.parse_args()
 
     if args.text:
-        run_task(args.text)
+        try:
+            result = run_task(args.text)
+            speak(_status_message(result.get("status")))
+            speak(summarize_for_speech(5))
+        except Exception:
+            logger.exception("Text task failed")
+            speak("Sorry, that task failed")
         return
 
-    while True:
-        goal = listen()
-        if not goal:
-            continue
-        if goal.lower() in {"exit", "quit"}:
-            return
-        run_task(goal)
+    start_killswitch()
+    from startup.boot import run_boot_sequence
+
+    run_boot_sequence()
+
+    try:
+        while True:
+            try:
+                goal = listen_push_to_talk("f9")
+                if not goal:
+                    continue
+
+                if goal.lower().strip() in {"exit", "quit"}:
+                    speak("Goodbye")
+                    return
+
+                result = run_task(goal)
+                speak(_status_message(result.get("status")))
+                speak(summarize_for_speech(5))
+            except Exception:
+                logger.exception("Voice task failed")
+                speak("Sorry, that task failed")
+    finally:
+        stop_killswitch()
 
 
 if __name__ == "__main__":

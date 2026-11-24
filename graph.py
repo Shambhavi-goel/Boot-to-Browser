@@ -9,7 +9,9 @@ from actions.desktop import AbortedError, execute
 from actions.verify import screen_changed
 from brain.planner import plan
 from config import MAX_STEPS
+from safety.gate import build_prompt, confirm_with_user, needs_confirmation
 from safety.killswitch import is_aborted
+from safety.log import log_action
 from schema import Action, Observation, StepRecord
 from vision.marks import observe
 from voice.tts import speak
@@ -109,6 +111,7 @@ def act_node(state: GraphState) -> GraphState:
         latency_ms=dict(state.get("stage_latency_ms", {})),
     )
     state.setdefault("history", []).append(record)
+    log_action(record.step, record.action, record.success, record.latency_ms)
     return state
 
 
@@ -170,6 +173,30 @@ def verify_node(state: GraphState) -> GraphState:
     return state
 
 
+def safety_gate_node(state: GraphState) -> GraphState:
+    """Ask for confirmation before executing sensitive actions."""
+    if _check_aborted(state):
+        return state
+
+    action = state.get("action")
+    if action is None:
+        state["status"] = "failed"
+        return state
+
+    if needs_confirmation(action):
+        prompt = build_prompt(action)
+        if not confirm_with_user(prompt):
+            speak("Cancelled")
+            state["status"] = "failed"
+            log_action(
+                state.get("step_count", 0) + 1,
+                action,
+                False,
+                dict(state.get("stage_latency_ms", {})),
+            )
+    return state
+
+
 def _route_after_verify(state: GraphState) -> Literal["observe", "plan", "done"]:
     """Route back to planning or stop for a terminal state."""
     if state.get("status") == "aborted":
@@ -204,12 +231,18 @@ def create_agent_graph():
     builder = StateGraph(GraphState)
     builder.add_node("observe", observe_node)
     builder.add_node("plan", plan_node)
+    builder.add_node("safety_gate", safety_gate_node)
     builder.add_node("act", act_node)
     builder.add_node("verify", verify_node)
 
     builder.set_entry_point("observe")
     builder.add_edge("observe", "plan")
-    builder.add_edge("plan", "act")
+    builder.add_edge("plan", "safety_gate")
+    builder.add_conditional_edges(
+        "safety_gate",
+        lambda state: "done" if state.get("status") in {"failed", "aborted"} else "act",
+        {"act": "act", "done": END},
+    )
     builder.add_edge("act", "verify")
     builder.add_conditional_edges(
         "verify",

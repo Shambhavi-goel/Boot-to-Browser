@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Boot-to-Browser Demo Form</title>
+  <style>
+    body { font-family: sans-serif; max-width: 480px; margin: 48px auto; }
+    label { display: block; margin-top: 16px; }
+    input { box-sizing: border-box; width: 100%; padding: 10px; margin-top: 6px; }
+    button { margin-top: 18px; padding: 10px 16px; }
+  </style>
+</head>
+<body>
+  <h1>Demo form</h1>
+  <form id="demo-form">
+    <label for="name">Name</label>
+    <input id="name" name="name" type="text">
+
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email">
+
+    <button id="submit" type="submit">Submit</button>
+  </form>
+  <p id="confirmation" role="status" hidden>Form submitted successfully.</p>
+
+  <script>
+    document.getElementById('demo-form').addEventListener('submit', function (event) {
+      event.preventEvent = true;
+      event.preventDefault();
+      document.getElementById('demo-form').hidden = true;
+      document.getElementById('confirmation').hidden = false;
+    });
+  </script>
+</body>
+</html>

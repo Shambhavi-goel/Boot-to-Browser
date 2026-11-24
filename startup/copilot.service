@@ -1,0 +1,13 @@
+[Unit]
+Description=Boot-to-Browser Autonomous Voice Co-Pilot
+After=graphical-session.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Boot-to-Browser
+ExecStart=%h/Boot-to-Browser/venv/bin/python %h/Boot-to-Browser/main.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
